@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/log"
 
 	charm "github.com/charmbracelet/charm/proto"
+	"github.com/charmbracelet/charm/server/db/sqlite/migration"
 	"github.com/google/uuid"
 	_ "github.com/tursodatabase/libsql-client-go/libsql"
 	"modernc.org/sqlite"
@@ -28,6 +29,10 @@ type DB struct {
 	db *sql.DB
 }
 
+type Tx struct {
+	tx *sql.Tx
+}
+
 // NewDB creates a new DB in the given path.
 func NewDB(driver string, path string) *DB {
 	var err error
@@ -37,11 +42,183 @@ func NewDB(driver string, path string) *DB {
 		panic(err)
 	}
 	d := &DB{db: db}
-	err = d.CreateDB()
+
+	exists, err := d.VersionTableExists()
 	if err != nil {
 		panic(err)
 	}
+	if !exists {
+		err = d.CreateDB()
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		latest, err := d.LatestVersion()
+		if err != nil {
+			log.Error("Error getting latest version. Did the initial migration fail?", "err", err)
+			panic(err)
+		}
+		log.Debug("Latest version", "version", latest.Name)
+		if latest.Version != migration.Migrations[len(migration.Migrations)-1].Version {
+			log.Info("The database may be out of date.", "latest_db_version", latest.Version, "latest_code_version", migration.Migrations[len(migration.Migrations)-1].Version, "latest_db", latest)
+			log.Debug("Latest Code version", "latest_code", migration.Migrations[len(migration.Migrations)-1])
+		}
+		incomplete, err := d.IncompleteVersionExists()
+		if err != nil {
+			panic(err)
+		}
+		if incomplete {
+			if !latest.ErrorAt.IsZero() {
+				log.Error("The latest version has an error. Please manually ensure all version migrations are complete, then try again.", "latest_db_version", latest.Version, "latest_code_version", migration.Migrations[len(migration.Migrations)-1].Version, "latest_db", latest, "latest_code", migration.Migrations[len(migration.Migrations)-1])
+				panic("The database is in an incomplete state. The latest version has an error Please manually ensure all version migrations are complete, then try again.")
+			} else if latest.CompletedAt.IsZero() {
+				log.Error("The latest version is incomplete. Please wait & ensure all version migrations are complete, then try again.", "latest_db_version", latest.Version, "latest_code_version", migration.Migrations[len(migration.Migrations)-1].Version, "latest_db", latest, "latest_code", migration.Migrations[len(migration.Migrations)-1])
+				panic("The database is in an incomplete state. The latest version is incomplete. Please wait & ensure all version migrations are complete, then try again.")
+			} else {
+				log.Error("The database is in an unknown state. The latest version is complete, but there are incomplete versions. Please manually ensure all version migrations are complete, then try again.", "latest_db_version", latest.Version, "latest_code_version", migration.Migrations[len(migration.Migrations)-1].Version, "latest_db", latest, "latest_code", migration.Migrations[len(migration.Migrations)-1])
+				panic("The database is in an unknown state. The latest version is complete, but there are incomplete versions. Please manually ensure all version migrations are complete, then try again.")
+			}
+		}
+	}
 	return d
+}
+
+// VersionTableExists returns true if the version table exists.
+func (me *DB) VersionTableExists() (bool, error) {
+	var c int
+	r := me.db.QueryRow(sqlSelectVersionTableCount)
+	if err := r.Scan(&c); err != nil {
+		return false, err
+	}
+	return c > 0, nil
+}
+
+// IncompleteVersionExists returns true if there are incomplete versions.
+func (me *DB) IncompleteVersionExists() (bool, error) {
+	var c int
+	r := me.db.QueryRow(sqlSelectIncompleteVersionCount)
+	if err := r.Scan(&c); err != nil {
+		return false, err
+	}
+	return c > 0, nil
+}
+
+// LatestVersion returns the latest version.
+func (me *DB) LatestVersion() (*migration.Version, error) {
+	v := &migration.Version{}
+	r := me.db.QueryRow(sqlSelectLatestVersion)
+	err := r.Scan(&v.Name, &v.CompletedAt, &v.ErrorAt, &v.Comment, &v.CreatedAt, &v.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+// Migrate runs the migrations.
+func (me *DB) Migrate() error {
+	err := migration.Validate()
+	if err != nil {
+		return err
+	}
+	latest, err := me.LatestVersion()
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if err == sql.ErrNoRows {
+		latest = &migration.Version{}
+		log.Debug("No previous migrations found")
+	}
+	log.Debug("Latest version", "version", latest.Version, "details", latest)
+
+	for i, m := range migration.Migrations {
+		if i+1 < latest.Version {
+			log.Debug("Skipping migration", "id", fmt.Sprintf("%04d", m.Version), "name", m.Name)
+			continue
+		}
+		log.Print("Running migration", "id", fmt.Sprintf("%04d", m.Version), "name", m.Name)
+		err := me.InsertVersion(m.Version, m.Name, nil)
+		if err != nil {
+			return err
+		}
+		err = me.WrapTransaction(func(tx *sql.Tx) error {
+			transaction := Tx{tx: tx}
+			_, err := transaction.tx.Exec(m.SQL)
+			if err != nil {
+				return err
+			}
+			err = transaction.UpdateCompleteVersion(m.Version)
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		if err != nil {
+			err2 := me.UpdateErrorVersion(m.Version, err.Error())
+			if err2 != nil {
+				log.Error("Error updating version", "version", m.Version, "err", err2)
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+// UpdateCompleteVersion updates the version table with the given version.
+func (me Tx) UpdateCompleteVersion(version int) error {
+	_, err := me.tx.Exec(sqlUpdateCompleteVersion, version)
+	return err
+}
+
+// UpdateErrorVersion updates the version table with the given version.
+func (me DB) UpdateErrorVersion(version int, comment string) error {
+	_, err := me.db.Exec(sqlUpdateErrorVersion, comment, version)
+	return err
+}
+
+// InsertVersion inserts a version into the version table.
+func (me DB) InsertVersion(version int, name string, comment *string) error {
+	_, err := me.db.Exec(sqlInsertVersion, version, name, comment)
+	return err
+}
+
+// CreateVersionTable creates the version table.
+func (me *DB) CreateVersionTable() error {
+	log.Debug("Creating version table")
+	_, err := me.db.Exec(sqlCreateVersionTable)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// CreateDB creates the database.
+func (me *DB) CreateDB() error {
+	log.Debug("Creating SQLite db")
+	err := me.CreateVersionTable()
+	if err != nil {
+		return err
+	}
+	err = me.Migrate()
+	if err != nil {
+		versionCount, verr := me.VersionCount()
+		if verr != nil {
+			log.Error("Error getting version count", "err", verr)
+			return verr
+		}
+		log.Error("Error migrating database", "version_count", versionCount, "err", err)
+		return err
+	}
+	return nil
+}
+
+// VersionCount returns the number of versions.
+func (me *DB) VersionCount() (int, error) {
+	var c int
+	r := me.db.QueryRow(sqlSelectVersionCount)
+	if err := r.Scan(&c); err != nil {
+		return 0, err
+	}
+	return c, nil
 }
 
 // UserCount returns the number of users.
@@ -413,41 +590,6 @@ func (me *DB) DeleteToken(token charm.Token) error {
 	})
 }
 
-// CreateDB creates the database.
-func (me *DB) CreateDB() error {
-	return me.WrapTransaction(func(tx *sql.Tx) error {
-		err := me.createUserTable(tx)
-		if err != nil {
-			return err
-		}
-		err = me.createPublicKeyTable(tx)
-		if err != nil {
-			return err
-		}
-		err = me.createNamedSeqTable(tx)
-		if err != nil {
-			return err
-		}
-		err = me.createEncryptKeyTable(tx)
-		if err != nil {
-			return err
-		}
-		err = me.createNewsTable(tx)
-		if err != nil {
-			return err
-		}
-		err = me.createNewsTagTable(tx)
-		if err != nil {
-			return err
-		}
-		err = me.createTokenTable(tx)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-}
-
 // Close the db.
 func (me *DB) Close() error {
 	log.Debug("Closing db")
@@ -593,41 +735,6 @@ func (me *DB) updateMergePublicKeys(tx *sql.Tx, userID1 int, userID2 int) error 
 	return err
 }
 
-func (me *DB) createUserTable(tx *sql.Tx) error {
-	_, err := tx.Exec(sqlCreateUserTable)
-	return err
-}
-
-func (me *DB) createPublicKeyTable(tx *sql.Tx) error {
-	_, err := tx.Exec(sqlCreatePublicKeyTable)
-	return err
-}
-
-func (me *DB) createEncryptKeyTable(tx *sql.Tx) error {
-	_, err := tx.Exec(sqlCreateEncryptKeyTable)
-	return err
-}
-
-func (me *DB) createNamedSeqTable(tx *sql.Tx) error {
-	_, err := tx.Exec(sqlCreateNamedSeqTable)
-	return err
-}
-
-func (me *DB) createNewsTable(tx *sql.Tx) error {
-	_, err := tx.Exec(sqlCreateNewsTable)
-	return err
-}
-
-func (me *DB) createNewsTagTable(tx *sql.Tx) error {
-	_, err := tx.Exec(sqlCreateNewsTagTable)
-	return err
-}
-
-func (me *DB) createTokenTable(tx *sql.Tx) error {
-	_, err := tx.Exec(sqlCreateTokenTable)
-	return err
-}
-
 func (me *DB) scanUser(r *sql.Row) (*charm.User, error) {
 	u := &charm.User{}
 	var un, ue, ub sql.NullString
@@ -653,6 +760,7 @@ func (me *DB) scanUser(r *sql.Row) (*charm.User, error) {
 
 // WrapTransaction runs the given function within a transaction.
 func (me *DB) WrapTransaction(f func(tx *sql.Tx) error) error {
+	me.db.Driver()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	tx, err := me.db.BeginTx(ctx, nil)

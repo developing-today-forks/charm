@@ -1,14 +1,8 @@
 package cmd
 
 import (
-	"database/sql"
-	"fmt"
-
-	"github.com/charmbracelet/log"
-
 	"github.com/charmbracelet/charm/server"
 	"github.com/charmbracelet/charm/server/db/sqlite"
-	"github.com/charmbracelet/charm/server/db/sqlite/migration"
 	"github.com/spf13/cobra"
 
 	_ "modernc.org/sqlite" // sqlite driver
@@ -24,26 +18,6 @@ var ServeMigrationCmd = &cobra.Command{
 	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := server.DefaultConfig()
-		db := sqlite.NewDB(cfg.DbDriver, server.GetDBDataSource(cfg))
-		var err error
-		for _, m := range []migration.Migration{
-			migration.Migration0001,
-		} {
-			log.Print("Running migration", "id", fmt.Sprintf("%04d", m.ID), "name", m.Name)
-			err = db.WrapTransaction(func(tx *sql.Tx) error {
-				_, err := tx.Exec(m.SQL)
-				if err != nil {
-					return err
-				}
-				return nil
-			})
-			if err != nil {
-				break
-			}
-		}
-		if err != nil {
-			return err
-		}
-		return nil
+		return sqlite.NewDB(cfg.DbDriver, server.GetDBDataSource(cfg)).Migrate()
 	},
 }
