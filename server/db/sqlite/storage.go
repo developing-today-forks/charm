@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -22,6 +23,7 @@ const (
 	DbName = "charm_sqlite.db"
 	// The DB default connection options.
 	DbOptions = "?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+	Redact    = "___REDACTED___"
 )
 
 // DB is the database struct.
@@ -33,10 +35,34 @@ type Tx struct {
 	tx *sql.Tx
 }
 
+// sanitizePath redacts sensitive information from a database connection string.
+func sanitizePath(path string) string {
+	u, err := url.Parse(path)
+	if err != nil {
+		// If the URL is not parseable, return it as is (or handle the error as needed)
+		return path
+	}
+
+	// List of query parameters to redact
+	redactParams := []string{"authToken", "password", "secret"}
+
+	// Replace the values of sensitive query parameters
+	q := u.Query()
+	for _, param := range redactParams {
+		if q.Has(param) {
+			q.Set(param, Redact)
+		}
+	}
+
+	// Reassemble the URL
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
 // NewDB creates a new DB in the given path.
 func NewDB(driver string, path string) *DB {
 	var err error
-	log.Debug("Opening SQLite db", "path", path, "driver", driver)
+	log.Info("Opening SQLite db", "path", sanitizePath(path), "driver", driver)
 	db, err := sql.Open(driver, path)
 	if err != nil {
 		panic(err)
@@ -56,12 +82,17 @@ func NewDB(driver string, path string) *DB {
 		latest, err := d.LatestVersion()
 		if err != nil {
 			log.Error("Error getting latest version. Did the initial migration fail?", "err", err)
+			log.Error("Dropping version table if it exists and is empty.")
+			derr := d.DropVersionTableIfEmpty()
+			if derr != nil {
+				log.Error("Error dropping version table", "err", derr)
+			}
 			panic(err)
 		}
-		log.Debug("Latest version", "version", latest.Name)
+		log.Info("Latest version", "version", latest.Version, "name", *latest.Name, "completed_at", latest.CompletedAt, "error_at", latest.ErrorAt, "comment", latest.Comment, "created_at", latest.CreatedAt, "updated_at", latest.UpdatedAt)
 		if latest.Version != migration.Migrations[len(migration.Migrations)-1].Version {
 			log.Info("The database may be out of date.", "latest_db_version", latest.Version, "latest_code_version", migration.Migrations[len(migration.Migrations)-1].Version, "latest_db", latest)
-			log.Debug("Latest Code version", "latest_code", migration.Migrations[len(migration.Migrations)-1])
+			log.Info("Latest Code version", "latest_code", migration.Migrations[len(migration.Migrations)-1])
 		}
 		incomplete, err := d.IncompleteVersionExists()
 		if err != nil {
@@ -105,17 +136,22 @@ func (me *DB) IncompleteVersionExists() (bool, error) {
 
 // LatestVersion returns the latest version.
 func (me *DB) LatestVersion() (*migration.Version, error) {
+	log.Debug("Getting latest version")
 	v := &migration.Version{}
 	r := me.db.QueryRow(sqlSelectLatestVersion)
-	err := r.Scan(&v.Name, &v.CompletedAt, &v.ErrorAt, &v.Comment, &v.CreatedAt, &v.UpdatedAt)
+	log.Debug("Scanning latest version row")
+	err := r.Scan(&v.Version, &v.Name, &v.CompletedAt, &v.ErrorAt, &v.Comment, &v.CreatedAt, &v.UpdatedAt)
 	if err != nil {
+		log.Error("Error getting latest version", "err", err)
 		return nil, err
 	}
+	log.Debug("Got latest version", "version", v.Version, "name", *v.Name, "completed_at", v.CompletedAt, "error_at", v.ErrorAt, "comment", v.Comment, "created_at", v.CreatedAt, "updated_at", v.UpdatedAt)
 	return v, nil
 }
 
 // Migrate runs the migrations.
 func (me *DB) Migrate() error {
+	log.Info("Running migrations")
 	err := migration.Validate()
 	if err != nil {
 		return err
@@ -126,28 +162,36 @@ func (me *DB) Migrate() error {
 	}
 	if err == sql.ErrNoRows {
 		latest = &migration.Version{}
-		log.Debug("No previous migrations found")
+		log.Info("No previous migrations found")
 	}
-	log.Debug("Latest version", "version", latest.Version, "details", latest)
+	log.Info("Latest version", "version", latest.Version, "name", *latest.Name, "completed_at", latest.CompletedAt, "error_at", latest.ErrorAt, "comment", latest.Comment, "created_at", latest.CreatedAt, "updated_at", latest.UpdatedAt)
 
-	for i, m := range migration.Migrations {
-		if i+1 < latest.Version {
-			log.Debug("Skipping migration", "id", fmt.Sprintf("%04d", m.Version), "name", m.Name)
+	executedMigrations := 0
+	skippedMigrations := 0
+
+	for _, m := range migration.Migrations {
+		if m.Version <= latest.Version {
+			log.Info("Skipping migration", "version", m.Version, "name", m.Name)
+			skippedMigrations++
 			continue
 		}
-		log.Print("Running migration", "id", fmt.Sprintf("%04d", m.Version), "name", m.Name)
+		log.Info("Running migration", "version", m.Version, "name", m.Name)
 		err := me.InsertVersion(m.Version, m.Name, nil)
 		if err != nil {
+			log.Error("Error inserting version", "version", m.Version, "name", m.Name, "err", err)
 			return err
 		}
 		err = me.WrapTransaction(func(tx *sql.Tx) error {
 			transaction := Tx{tx: tx}
 			_, err := transaction.tx.Exec(m.SQL)
 			if err != nil {
+				log.Error("Error executing migration", "version", m.Version, "name", m.Name, "err", err)
 				return err
 			}
+			executedMigrations++
 			err = transaction.UpdateCompleteVersion(m.Version)
 			if err != nil {
+				log.Error("Error updating version", "version", m.Version, "name", m.Name, "err", err)
 				return err
 			}
 			return nil
@@ -159,31 +203,52 @@ func (me *DB) Migrate() error {
 			}
 			return err
 		}
+		log.Info("Migration complete", "version", m.Version, "name", m.Name, "committed", "true")
 	}
+	log.Info("Migrations complete", "version", migration.Migrations[len(migration.Migrations)-1].Version, "name", migration.Migrations[len(migration.Migrations)-1].Name, "executed", executedMigrations, "skipped", skippedMigrations, "total", len(migration.Migrations))
 	return nil
 }
 
 // UpdateCompleteVersion updates the version table with the given version.
 func (me Tx) UpdateCompleteVersion(version int) error {
+	log.Info("Updating version to complete", "version", version)
 	_, err := me.tx.Exec(sqlUpdateCompleteVersion, version)
+	if err != nil {
+		log.Error("Error updating version to complete", "version", version, "err", err)
+	} else {
+		log.Info("Updated version to complete", "version", version)
+	}
 	return err
 }
 
 // UpdateErrorVersion updates the version table with the given version.
 func (me DB) UpdateErrorVersion(version int, comment string) error {
+	log.Info("Updating version with error", "version", version, "comment", comment)
 	_, err := me.db.Exec(sqlUpdateErrorVersion, comment, version)
+	if err != nil {
+		log.Error("Error updating version", "version", version, "comment", comment, "err", err)
+	} else {
+		log.Info("Updated version with error", "version", version, "comment", comment)
+	}
 	return err
 }
 
 // InsertVersion inserts a version into the version table.
 func (me DB) InsertVersion(version int, name string, comment *string) error {
+	log.Info("Inserting version", "version", version, "name", name, "comment", comment)
 	_, err := me.db.Exec(sqlInsertVersion, version, name, comment)
+
+	if err != nil {
+		log.Error("Error inserting version", "version", version, "name", name, "comment", comment, "err", err)
+	} else {
+		log.Info("Inserted version", "version", version, "name", name, "comment", comment)
+	}
 	return err
 }
 
 // CreateVersionTable creates the version table.
 func (me *DB) CreateVersionTable() error {
-	log.Debug("Creating version table")
+	log.Info("Creating version table")
 	_, err := me.db.Exec(sqlCreateVersionTable)
 	if err != nil {
 		return err
@@ -193,21 +258,64 @@ func (me *DB) CreateVersionTable() error {
 
 // CreateDB creates the database.
 func (me *DB) CreateDB() error {
-	log.Debug("Creating SQLite db")
+	log.Info("Creating SQLite db")
 	err := me.CreateVersionTable()
 	if err != nil {
+		log.Error("Error creating version table", "err", err)
 		return err
 	}
+	log.Info("Running migrations")
 	err = me.Migrate()
 	if err != nil {
+		log.Error("Error migrating database", "err", err)
 		versionCount, verr := me.VersionCount()
 		if verr != nil {
 			log.Error("Error getting version count", "err", verr)
 			return verr
 		}
 		log.Error("Error migrating database", "version_count", versionCount, "err", err)
+		if versionCount == 0 {
+			log.Error("No versions found, dropping version table")
+			err = me.DropVersionTableIfEmpty()
+			if err != nil {
+				log.Error("Error dropping version table", "err", err)
+			}
+		}
 		return err
 	}
+	return nil
+}
+
+// DropVersionTableIfEmpty drops the version table.
+func (me *DB) DropVersionTableIfEmpty() error {
+	log.Info("Dropping version table if empty")
+	exists, err := me.VersionTableExists()
+	if err != nil {
+		log.Error("Error checking if version table exists", "err", err)
+		return err
+	}
+	if !exists {
+		log.Info("Version table does not exist")
+		return nil
+	}
+	log.Info("Version table exists", "exists", exists)
+	versionCount, err := me.VersionCount()
+	if err != nil {
+		log.Error("Error getting version count", "err", err)
+		return err
+	}
+	log.Error("Version count", "count", versionCount)
+	if versionCount != 0 {
+		log.Error("Version table is not empty", "count", versionCount)
+		return fmt.Errorf("version table is not empty")
+	}
+	log.Info("Dropping version table because it is empty")
+	_, err = me.db.Exec(sqlDropVersionTable)
+	if err != nil {
+		log.Error("Error dropping version table", "err", err)
+		return err
+	}
+	log.Info("Dropped version table")
 	return nil
 }
 
@@ -264,7 +372,7 @@ func (me *DB) GetUserWithName(name string) (*charm.User, error) {
 // SetUserName sets a user name for the given user id.
 func (me *DB) SetUserName(charmID string, name string) (*charm.User, error) {
 	var u *charm.User
-	log.Debug("Setting name for user", "name", name, "id", charmID)
+	log.Info("Setting name for user", "name", name, "id", charmID)
 	err := me.WrapTransaction(func(tx *sql.Tx) error {
 		// nolint: godox
 		// TODO: this should be handled with unique constraints in the database instead.
@@ -321,7 +429,7 @@ func (me *DB) UserForKey(key string, create bool) (*charm.User, error) {
 			return charm.ErrMissingUser
 		}
 		if err == sql.ErrNoRows {
-			log.Debug("Creating user for key", "key", charm.PublicKeySha(key))
+			log.Info("Creating user for key", "key", charm.PublicKeySha(key))
 			err = me.createUser(tx, key)
 			if err != nil {
 				return err
@@ -352,7 +460,7 @@ func (me *DB) UserForKey(key string, create bool) (*charm.User, error) {
 
 // AddEncryptKeyForPublicKey adds an ecrypted key to the user.
 func (me *DB) AddEncryptKeyForPublicKey(u *charm.User, pk string, gid string, ek string, ca *time.Time) error {
-	log.Debug("Adding encrypted key for user", "key", gid, "time", ca, "id", u.CharmID)
+	log.Info("Adding encrypted key for user", "key", gid, "time", ca, "id", u.CharmID)
 	return me.WrapTransaction(func(tx *sql.Tx) error {
 		u2, err := me.UserForKey(pk, false)
 		if err != nil {
@@ -371,7 +479,7 @@ func (me *DB) AddEncryptKeyForPublicKey(u *charm.User, pk string, gid string, ek
 		if err == sql.ErrNoRows {
 			return me.insertEncryptKey(tx, ek, gid, u2.PublicKey.ID, ca)
 		}
-		log.Debug("Encrypt key already exists for public key, skipping", "key", gid)
+		log.Info("Encrypt key already exists for public key, skipping", "key", gid)
 		return nil
 	})
 }
@@ -407,7 +515,7 @@ func (me *DB) EncryptKeysForPublicKey(pk *charm.PublicKey) ([]*charm.EncryptKey,
 // LinkUserKey links a user to a key.
 func (me *DB) LinkUserKey(user *charm.User, key string) error {
 	ks := charm.PublicKeySha(key)
-	log.Debug("Linking user and key", "id", user.CharmID, "key", ks)
+	log.Info("Linking user and key", "id", user.CharmID, "key", ks)
 	return me.WrapTransaction(func(tx *sql.Tx) error {
 		return me.insertPublicKey(tx, user.ID, key)
 	})
@@ -416,7 +524,7 @@ func (me *DB) LinkUserKey(user *charm.User, key string) error {
 // UnlinkUserKey unlinks the key from the user.
 func (me *DB) UnlinkUserKey(user *charm.User, key string) error {
 	ks := charm.PublicKeySha(key)
-	log.Debug("Unlinking user key", "id", user.CharmID, "key", ks)
+	log.Info("Unlinking user key", "id", user.CharmID, "key", ks)
 	return me.WrapTransaction(func(tx *sql.Tx) error {
 		err := me.deleteUserPublicKey(tx, user.ID, key)
 		if err != nil {
@@ -429,7 +537,7 @@ func (me *DB) UnlinkUserKey(user *charm.User, key string) error {
 			return err
 		}
 		if count == 0 {
-			log.Debug("Removing last key for account, deleting", "id", user.CharmID)
+			log.Info("Removing last key for account, deleting", "id", user.CharmID)
 			// nolint: godox
 			// TODO: Where to put glow stuff
 			// err := me.deleteUserStashMarkdown(tx, user.ID)
@@ -445,7 +553,7 @@ func (me *DB) UnlinkUserKey(user *charm.User, key string) error {
 // KeysForUser returns all user's public keys.
 func (me *DB) KeysForUser(user *charm.User) ([]*charm.PublicKey, error) {
 	var keys []*charm.PublicKey
-	log.Debug("Getting keys for user", "id", user.CharmID)
+	log.Info("Getting keys for user", "id", user.CharmID)
 	err := me.WrapTransaction(func(tx *sql.Tx) error {
 		rs, err := me.selectUserPublicKeys(tx, user.ID)
 		if err != nil {
@@ -592,7 +700,7 @@ func (me *DB) DeleteToken(token charm.Token) error {
 
 // Close the db.
 func (me *DB) Close() error {
-	log.Debug("Closing db")
+	log.Info("Closing db")
 	return me.db.Close()
 }
 

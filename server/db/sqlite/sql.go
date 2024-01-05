@@ -1,17 +1,19 @@
 package sqlite
 
 const (
-	sqlCreateVersionTable = `CREATE TABLE IF NOT EXISTS version (
-		id INTEGER PRIMARY KEY,
-		version INTEGER NOT NULL,
-		name TEXT NOT NULL,
-		completed_at DATETIME,
-		error_at DATETIME,
-		comment TEXT,
-		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		UNIQUE(version)
-	);`
+	sqlCreateVersionTable = `
+		CREATE TABLE IF NOT EXISTS version (
+			id INTEGER PRIMARY KEY,
+			version INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			completed_at DATETIME,
+			error_at DATETIME,
+			comment TEXT,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(version)
+		);`
+	sqlDropVersionTable             = `DROP TABLE IF EXISTS version;`
 	sqlSelectVersionTableCount      = `SELECT count(*) FROM sqlite_master WHERE type='table' AND name='version';`
 	sqlSelectVersionCount           = `SELECT count(*) FROM version;`
 	sqlSelectLatestVersion          = `SELECT version, name, completed_at, error_at, comment, created_at, updated_at FROM version ORDER BY version DESC LIMIT 1;`
@@ -62,9 +64,10 @@ const (
 	sqlCountUserNames = `SELECT COUNT(*) FROM charm_user WHERE name <> ''`
 
 	sqlSelectNews     = `SELECT id, subject, body, created_at FROM news WHERE id = ?`
-	sqlSelectNewsList = `SELECT n.id, n.subject, n.created_at FROM news AS n
-	                     INNER JOIN news_tag AS t ON t.news_id = n.id
-	                     WHERE t.tag = ?
-	                     ORDER BY n.created_at desc
-	                     LIMIT 50 OFFSET ?`
+	sqlSelectNewsList = `
+		SELECT n.id, n.subject, n.created_at FROM news AS n
+		INNER JOIN news_tag AS t ON t.news_id = n.id
+		WHERE t.tag = ?
+		ORDER BY n.created_at desc
+		LIMIT 50 OFFSET ?`
 )

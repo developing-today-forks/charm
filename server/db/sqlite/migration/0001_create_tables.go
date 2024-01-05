@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS charm_user(
   email varchar(254),
   bio varchar(1000),
     created_at timestamp default current_timestamp
-)
+);
 
 CREATE TABLE IF NOT EXISTS public_key(
   id INTEGER NOT NULL PRIMARY KEY,
