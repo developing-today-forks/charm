@@ -1,9 +1,23 @@
 #!/usr/bin/env pwsh
 
+Set-StrictMode -Version Latest
+
+$PSNativeCommandUseErrorActionPreference = $true
+
+if ($PSNativeCommandUseErrorActionPreference) {
+  # always true, this is a linter workaround
+  $ErrorActionPreference = "Stop"
+  $PSDefaultParameterValues['*:ErrorAction'] = 'Stop'
+}
+
 $cwd = Get-Location
 
-Set-Location $PSScriptRoot
+try {
 
-go build -tags libsql
+  Set-Location $PSScriptRoot
 
-Set-Location $cwd
+  go build -v -tags libsql
+
+} finally {
+  Set-Location $cwd
+}

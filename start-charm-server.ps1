@@ -1,6 +1,14 @@
 #!/usr/bin/env pwsh
 
-$cwd = Get-Location
+Set-StrictMode -Version Latest
+
+$PSNativeCommandUseErrorActionPreference = $true
+
+if ($PSNativeCommandUseErrorActionPreference) {
+    # always true, this is a linter workaround
+    $ErrorActionPreference = "Stop"
+    $PSDefaultParameterValues['*:ErrorAction'] = 'Stop'
+}
 
 ."$PSScriptRoot/build-libsql.ps1"
 
@@ -16,6 +24,4 @@ $env:CHARM_SERVER_DB_DATA_SOURCE="libsql://${env:TURSO_HOST}?authToken=${env:TUR
 
 Set-Location $PSScriptRoot
 
-charm serve
-
-Set-Location $cwd
+./charm serve
