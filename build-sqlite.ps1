@@ -17,7 +17,7 @@ try {
   Set-Location $PSScriptRoot
 
   go build -v -tags sqlite
-}
-finally {
+
+} finally {
   Set-Location $cwd
 }
