@@ -12,7 +12,8 @@ import (
 var Migrations = []Migration{
 	Migration0001,
 	Migration0002,
-	Migration0003_DT_Passwords_And_Keys,
+	Migration0003_DT_Passwords_And_Keys, // <- 2 versions, choose one build tag: (libsql|sqlite)
+	// /\ main difference: libsql version uses RANDOM ROWID for create table statements
 }
 
 // Migration is a db migration script.
