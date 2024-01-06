@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -22,7 +23,7 @@ const (
 	// The DB default file name.
 	DbName = "charm_sqlite.db"
 	// The DB default connection options.
-	DbOptions = "?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+	DbOptions = ""
 	Redact    = "___REDACTED___"
 )
 
@@ -62,7 +63,12 @@ func sanitizePath(path string) string {
 // NewDB creates a new DB in the given path.
 func NewDB(driver string, path string) *DB {
 	var err error
+
+	if _, err := url.ParseRequestURI(path); err != nil {
+		path = "file:" + filepath.ToSlash(path)
+	}
 	log.Info("Opening SQLite db", "path", sanitizePath(path), "driver", driver)
+
 	db, err := sql.Open(driver, path)
 	if err != nil {
 		panic(err)
@@ -91,8 +97,8 @@ func NewDB(driver string, path string) *DB {
 		}
 		log.Info("Latest version", "version", latest.Version, "name", *latest.Name, "completed_at", latest.CompletedAt, "error_at", latest.ErrorAt, "comment", latest.Comment, "created_at", latest.CreatedAt, "updated_at", latest.UpdatedAt)
 		if latest.Version != migration.Migrations[len(migration.Migrations)-1].Version {
-			log.Info("The database may be out of date.", "latest_db_version", latest.Version, "latest_code_version", migration.Migrations[len(migration.Migrations)-1].Version, "latest_db", latest)
-			log.Info("Latest Code version", "latest_code", migration.Migrations[len(migration.Migrations)-1])
+			log.Info("The database may be out of date.", "latest_code_version", migration.Migrations[len(migration.Migrations)-1].Version, "latest_code_version_name", migration.Migrations[len(migration.Migrations)-1].Name, "latest_db_version", latest.Version, "latest_db_version_name", *latest.Name, "latest_db_version_completed_at", latest.CompletedAt, "latest_db_version_error_at", latest.ErrorAt, "latest_db_version_comment", latest.Comment)
+			log.Debug("Latest Code version", "latest_code", migration.Migrations[len(migration.Migrations)-1])
 		}
 		incomplete, err := d.IncompleteVersionExists()
 		if err != nil {
@@ -142,7 +148,7 @@ func (me *DB) LatestVersion() (*migration.Version, error) {
 	log.Debug("Scanning latest version row")
 	err := r.Scan(&v.Version, &v.Name, &v.CompletedAt, &v.ErrorAt, &v.Comment, &v.CreatedAt, &v.UpdatedAt)
 	if err != nil {
-		log.Error("Error getting latest version", "err", err)
+		log.Debug("Error getting latest version", "err", err)
 		return nil, err
 	}
 	log.Debug("Got latest version", "version", v.Version, "name", *v.Name, "completed_at", v.CompletedAt, "error_at", v.ErrorAt, "comment", v.Comment, "created_at", v.CreatedAt, "updated_at", v.UpdatedAt)
@@ -164,8 +170,9 @@ func (me *DB) Migrate() error {
 		latest = &migration.Version{}
 		log.Info("No previous migrations found")
 	}
-	log.Info("Latest version", "version", latest.Version, "name", *latest.Name, "completed_at", latest.CompletedAt, "error_at", latest.ErrorAt, "comment", latest.Comment, "created_at", latest.CreatedAt, "updated_at", latest.UpdatedAt)
-
+	if err == nil {
+		log.Info("Latest version", "version", latest.Version, "name", *latest.Name, "completed_at", latest.CompletedAt, "error_at", latest.ErrorAt, "comment", latest.Comment, "created_at", latest.CreatedAt, "updated_at", latest.UpdatedAt)
+	}
 	executedMigrations := 0
 	skippedMigrations := 0
 

@@ -34,7 +34,7 @@ type Config struct {
 	HealthPort     int    `env:"CHARM_SERVER_HEALTH_PORT" envDefault:"35356"`
 	DataDir        string `env:"CHARM_SERVER_DATA_DIR" envDefault:"data"`
 	DbDataSource   string `env:"CHARM_SERVER_DB_DATA_SOURCE" `
-	DbDriver       string `env:"CHARM_SERVER_DB_DRIVER" envDefault:"sqlite"`
+	DbDriver       string `env:"CHARM_SERVER_DB_DRIVER" envDefault:"libsql"`
 	UseTLS         bool   `env:"CHARM_SERVER_USE_TLS" envDefault:"false"`
 	TLSKeyFile     string `env:"CHARM_SERVER_TLS_KEY_FILE"`
 	TLSCertFile    string `env:"CHARM_SERVER_TLS_CERT_FILE"`

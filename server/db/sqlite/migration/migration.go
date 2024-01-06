@@ -7,6 +7,14 @@ import (
 	"github.com/charmbracelet/log"
 )
 
+// Migrations is a list of all migrations.
+// The migrations must be in sequence starting from 1.
+var Migrations = []Migration{
+	Migration0001,
+	Migration0002,
+	Migration0003_DT_Passwords_And_Keys,
+}
+
 // Migration is a db migration script.
 type Migration struct {
 	Version int
@@ -47,11 +55,6 @@ func safeTime(t *time.Time) string {
 		return t.Format(time.RFC3339)
 	}
 	return "nil"
-}
-
-var Migrations = []Migration{
-	Migration0001,
-	Migration0002,
 }
 
 // Validate validates the migration sequence.
