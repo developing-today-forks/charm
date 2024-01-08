@@ -3,7 +3,7 @@ package migration
 // Migration0004_AlterReduceNull allows null for more columns.
 var Migration0004_AlterReduceNull = Migration{
 	Version: 4,
-	Name:    "Alter: reduce null",
+	Name:    "DT: Alter: reduce null",
 	SQL: `
 CREATE TABLE IF NOT EXISTS new_connection(
 	id INTEGER NOT NULL PRIMARY KEY,
