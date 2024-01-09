@@ -16,6 +16,8 @@ var Migrations = []Migration{
 	// /\ main difference: libsql version uses RANDOM ROWID for create table statements
 	Migration0004_AlterReduceNull,
 	Migration0005_AlterReduceNull,
+	Migration0006_Files, // <- 2 versions, choose one build tag: (libsql|sqlite)
+	// /\ main difference: libsql version uses RANDOM ROWID for create table statements
 }
 
 // Migration is a db migration script.
