@@ -61,7 +61,7 @@ func sanitizePath(path string) string {
 }
 
 // NewDB creates a new DB in the given path.
-func NewDB(driver string, path string) *DB {
+func NewDB(driver string, path string, args []string) *DB {
 	var err error
 
 	if _, err := url.ParseRequestURI(path); err != nil {
@@ -79,7 +79,7 @@ func NewDB(driver string, path string) *DB {
 	if err != nil {
 		panic(err)
 	}
-	if !exists {
+	if !exists || (len(args) > 0 && args[0] == "create-db") {
 		err = d.CreateDB()
 		if err != nil {
 			panic(err)
@@ -106,14 +106,26 @@ func NewDB(driver string, path string) *DB {
 		}
 		if incomplete {
 			if !latest.ErrorAt.IsZero() {
-				log.Error("The latest version has an error. Please manually ensure all version migrations are complete, then try again.", "latest_db_version", latest.Version, "latest_code_version", migration.Migrations[len(migration.Migrations)-1].Version, "latest_db", latest, "latest_code", migration.Migrations[len(migration.Migrations)-1])
-				panic("The database is in an incomplete state. The latest version has an error Please manually ensure all version migrations are complete, then try again.")
+				log.Error("The latest version has an error. Please manually ensure all version migrations are complete, then try again. Alternatively, try running `charm serve migrate retry`.", "latest_db_version", latest.Version, "latest_code_version", migration.Migrations[len(migration.Migrations)-1].Version, "latest_db", latest, "latest_code", migration.Migrations[len(migration.Migrations)-1])
+				if len(args) == 0 || args[0] != "allow-last-failed" {
+					panic("The database is in an incomplete state. The latest version has an error Please manually ensure all version migrations are complete, then try again.")
+				} else {
+					log.Warn("Allowing last failed version to be incomplete")
+				}
 			} else if latest.CompletedAt.IsZero() {
-				log.Error("The latest version is incomplete. Please wait & ensure all version migrations are complete, then try again.", "latest_db_version", latest.Version, "latest_code_version", migration.Migrations[len(migration.Migrations)-1].Version, "latest_db", latest, "latest_code", migration.Migrations[len(migration.Migrations)-1])
-				panic("The database is in an incomplete state. The latest version is incomplete. Please wait & ensure all version migrations are complete, then try again.")
+				log.Error("The latest version is incomplete. Please wait & ensure all version migrations are complete, then try again. Alternatively, try running `charm serve migrate retry allow-last-incomplete`.", "latest_db_version", latest.Version, "latest_code_version", migration.Migrations[len(migration.Migrations)-1].Version, "latest_db", latest, "latest_code", migration.Migrations[len(migration.Migrations)-1])
+				if len(args) == 0 || args[0] != "allow-last-incomplete" {
+					panic("The database is in an incomplete state. The latest version is incomplete. Please wait & ensure all version migrations are complete, then try again.")
+				} else {
+					log.Warn("Allowing last incomplete version to be incomplete")
+				}
 			} else {
-				log.Error("The database is in an unknown state. The latest version is complete, but there are incomplete versions. Please manually ensure all version migrations are complete, then try again.", "latest_db_version", latest.Version, "latest_code_version", migration.Migrations[len(migration.Migrations)-1].Version, "latest_db", latest, "latest_code", migration.Migrations[len(migration.Migrations)-1])
-				panic("The database is in an unknown state. The latest version is complete, but there are incomplete versions. Please manually ensure all version migrations are complete, then try again.")
+				log.Error("The database is in an unknown state. The latest version is complete, but there are incomplete versions. Please manually ensure all version migrations are complete, then try again. Alternatively, try running `charm serve migrate retry allow-unknown-state`.", "latest_db_version", latest.Version, "latest_code_version", migration.Migrations[len(migration.Migrations)-1].Version, "latest_db", latest, "latest_code", migration.Migrations[len(migration.Migrations)-1])
+				if len(args) == 0 || args[0] != "allow-unknown-state" {
+					panic("The database is in an unknown state. The latest version is complete, but there are incomplete versions. Please manually ensure all version migrations are complete, then try again.")
+				} else {
+					log.Warn("Allowing unknown state")
+				}
 			}
 		}
 	}
@@ -177,16 +189,20 @@ func (me *DB) Migrate() error {
 	skippedMigrations := 0
 
 	for _, m := range migration.Migrations {
-		if m.Version <= latest.Version {
+		if m.Version < latest.Version || (m.Version == latest.Version && latest.CompletedAt != nil) {
 			log.Info("Skipping migration", "version", m.Version, "name", m.Name)
 			skippedMigrations++
 			continue
 		}
 		log.Info("Running migration", "version", m.Version, "name", m.Name)
-		err := me.InsertVersion(m.Version, m.Name, nil)
-		if err != nil {
-			log.Error("Error inserting version", "version", m.Version, "name", m.Name, "err", err)
-			return err
+		if m.Version != latest.Version {
+			err := me.InsertVersion(m.Version, m.Name, nil)
+			if err != nil {
+				log.Error("Error inserting version", "version", m.Version, "name", m.Name, "err", err)
+				return err
+			}
+		} else {
+			log.Info("Version already exists, proceeding with migration", "version", m.Version, "name", m.Name)
 		}
 		err = me.WrapTransaction(func(tx *sql.Tx) error {
 			transaction := Tx{tx: tx}

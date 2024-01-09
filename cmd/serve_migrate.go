@@ -8,6 +8,25 @@ import (
 	_ "modernc.org/sqlite" // sqlite driver
 )
 
+func init() {
+	ServeMigrationCmd.AddCommand(RetryMigrationCmd)
+}
+
+var RetryMigrationCmd = &cobra.Command{
+	Use:     "retry",
+	Aliases: []string{"r"},
+	Hidden:  false,
+	Short:   "Retry a failed migration.",
+	Long:    paragraph("Retry a failed migration."),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg := server.DefaultConfig()
+		if len(args) == 0 {
+			args = []string{"allow-last-failed"}
+		}
+		return sqlite.NewDB(cfg.DbDriver, server.GetDBDataSource(cfg), args).Migrate()
+	},
+}
+
 // ServeMigrationCmd migrate server db.
 var ServeMigrationCmd = &cobra.Command{
 	Use:     "migrate",
@@ -18,6 +37,6 @@ var ServeMigrationCmd = &cobra.Command{
 	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg := server.DefaultConfig()
-		return sqlite.NewDB(cfg.DbDriver, server.GetDBDataSource(cfg)).Migrate()
+		return sqlite.NewDB(cfg.DbDriver, server.GetDBDataSource(cfg), nil).Migrate()
 	},
 }

@@ -214,7 +214,7 @@ func GetDBDataSource(cfg *Config) string {
 
 func (srv *Server) init(cfg *Config) {
 	if cfg.DB == nil {
-		srv.Config = cfg.WithDB(sqlite.NewDB(cfg.DbDriver, GetDBDataSource(cfg)))
+		srv.Config = cfg.WithDB(sqlite.NewDB(cfg.DbDriver, GetDBDataSource(cfg), nil))
 	}
 	if cfg.FileStore == nil {
 		fs, err := lfs.NewLocalFileStore(filepath.Join(cfg.DataDir, "files"))
