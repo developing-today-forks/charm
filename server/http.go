@@ -104,6 +104,7 @@ func NewHTTPServer(cfg *Config) (*HTTPServer, error) {
 	mux.HandleFunc(pat.Post("/v1/seq/:name"), s.handlePostSeq)
 	mux.HandleFunc(pat.Get("/v1/news"), s.handleGetNewsList)
 	mux.HandleFunc(pat.Get("/v1/news/:id"), s.handleGetNews)
+	mux.HandleFunc(pat.Get("/.well-known/jwks.json"), s.handleJWKS)
 	mux.HandleFunc(pat.Get("/v1/public/jwks"), s.handleJWKS)
 	mux.HandleFunc(pat.Get("/.well-known/openid-configuration"), s.handleOpenIDConfig)
 	s.db = cfg.DB
