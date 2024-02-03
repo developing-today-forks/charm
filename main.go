@@ -22,12 +22,12 @@ var (
 	// CommitSHA is the commit SHA of the charm CLI.
 	CommitSHA = ""
 
-	styles = common.DefaultStyles()
+	Styles = common.DefaultStyles()
 
-	rootCmd = &cobra.Command{
+	RootCmd = &cobra.Command{
 		Use:                   "charm",
 		Short:                 "Do Charm stuff",
-		Long:                  styles.Paragraph.Render(fmt.Sprintf("Do %s stuff. Run without arguments for a TUI or use the sub-commands like a pro.", styles.Keyword.Render("Charm"))),
+		Long:                  Styles.Paragraph.Render(fmt.Sprintf("Do %s stuff. Run without arguments for a TUI or use the sub-commands like a pro.", Styles.Keyword.Render("Charm"))),
 		DisableFlagsInUseLine: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if common.IsTTY() {
@@ -61,13 +61,13 @@ var (
 		},
 	}
 
-	manCmd = &cobra.Command{
+	ManCmd = &cobra.Command{
 		Use:    "man",
 		Short:  "Generate man pages",
 		Args:   cobra.NoArgs,
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			manPage, err := mcobra.NewManPage(1, rootCmd) //.
+			manPage, err := mcobra.NewManPage(1, RootCmd) //.
 			if err != nil {
 				return err
 			}
@@ -82,8 +82,8 @@ var (
 
 func init() {
 	if len(CommitSHA) >= 7 {
-		vt := rootCmd.VersionTemplate()
-		rootCmd.SetVersionTemplate(vt[:len(vt)-1] + " (" + CommitSHA[0:7] + ")\n")
+		vt := RootCmd.VersionTemplate()
+		RootCmd.SetVersionTemplate(vt[:len(vt)-1] + " (" + CommitSHA[0:7] + ")\n")
 	}
 	if Version == "" {
 		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Sum != "" {
@@ -92,10 +92,10 @@ func init() {
 			Version = "unknown (built from source)"
 		}
 	}
-	rootCmd.Version = Version
-	rootCmd.CompletionOptions.HiddenDefaultCmd = true
+	RootCmd.Version = Version
+	RootCmd.CompletionOptions.HiddenDefaultCmd = true
 
-	rootCmd.AddCommand(
+	RootCmd.AddCommand(
 		cmd.BioCmd,
 		cmd.IDCmd,
 		cmd.JWTCmd,
@@ -113,12 +113,16 @@ func init() {
 		cmd.CryptCmd,
 		cmd.MigrateAccountCmd,
 		cmd.WhereCmd,
-		manCmd,
+		ManCmd,
 	)
 }
 
-func main() {
-	if err := rootCmd.Execute(); err != nil {
+func Main() {
+	if err := RootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+func main() {
+	Main()
 }
