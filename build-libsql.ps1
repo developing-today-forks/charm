@@ -16,6 +16,7 @@ try {
 
   Set-Location $PSScriptRoot
 
+  go mod tidy
   go build -v -tags libsql
 
 } finally {
