@@ -15,16 +15,18 @@ var (
 		Short:  "Generate man pages",
 		Args:   cobra.NoArgs,
 		Hidden: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			manPage, err := mcobra.NewManPage(1, RootCmd) //.
-			if err != nil {
-				return err
-			}
-
-			manPage = manPage.WithSection("Copyright", "(C) 2021-2022 Charmbracelet, Inc.\n"+
-				"Released under MIT license.")
-			fmt.Println(manPage.Build(roff.NewDocument()))
-			return nil
-		},
+		RunE:   ManCmdRunE,
 	}
 )
+
+func ManCmdRunE(cmd *cobra.Command, args []string) error {
+	manPage, err := mcobra.NewManPage(1, RootCmd) //.
+	if err != nil {
+		return err
+	}
+
+	manPage = manPage.WithSection("Copyright", "(C) 2021-2022 Charmbracelet, Inc.\n"+
+		"Released under MIT license.")
+	fmt.Println(manPage.Build(roff.NewDocument()))
+	return nil
+}
