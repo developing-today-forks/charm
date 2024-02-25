@@ -2,10 +2,7 @@ package cmd
 
 import (
 	"context"
-	"os"
-	"os/signal"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -46,6 +43,10 @@ func init() {
 }
 
 func ServeCmdRunE(cmd *cobra.Command, args []string) error {
+	return ServeCmdRunEWithContext(context.Background(), cmd, args)
+}
+
+func ServeCmdRunEWithContext(ctx context.Context, cmd *cobra.Command, args []string) error {
 	cfg := server.DefaultConfig()
 	if serverHTTPPort != 0 {
 		cfg.HTTPPort = serverHTTPPort
@@ -73,18 +74,22 @@ func ServeCmdRunE(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	done := make(chan os.Signal, 1)
-	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	done := make(chan error, 1)
 	go func() {
-		if err := s.Start(); err != nil {
-			log.Fatal("error starting server", "err", err)
-		}
+		done <- s.Start()
 	}()
 
-	<-done
+	select {
+	case err := <-done:
+		if err != nil {
+			log.Fatal("error starting server", "err", err)
+		}
+	case <-ctx.Done():
+		log.Info("Context cancelled, shutting down server")
+	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer func() { cancel() }()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
-	return s.Shutdown(ctx)
+	return s.Shutdown(shutdownCtx)
 }

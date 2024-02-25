@@ -37,9 +37,6 @@ func (cc *Client) Auth() (*charm.Auth, error) {
 		}
 		cc.claims = token.Claims.(*jwt.RegisteredClaims)
 		cc.auth = auth
-		if err != nil {
-			return nil, charm.ErrAuthFailed{Err: err}
-		}
 	}
 	return cc.auth, nil
 }
