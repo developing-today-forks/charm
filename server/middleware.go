@@ -135,7 +135,7 @@ func charmIDFromRequest(r *http.Request) (string, error) {
 }
 
 func jwtMiddlewareImpl(pk crypto.PublicKey, iss string, aud []string) (func(http.Handler) http.Handler, error) {
-	kf := func(ctx context.Context) (interface{}, error) {
+	kf := func(ctx context.Context) (any, error) {
 		return pk, nil
 	}
 	v, err := validator.New(

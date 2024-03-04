@@ -103,7 +103,7 @@ func (me *SSHServer) sendAPIMessage(s ssh.Session, msg string) error {
 	return me.sendJSON(s, charm.Message{Message: msg})
 }
 
-func (me *SSHServer) sendJSON(s ssh.Session, o interface{}) error {
+func (me *SSHServer) sendJSON(s ssh.Session, o any) error {
 	return json.NewEncoder(s).Encode(o)
 }
 

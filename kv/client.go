@@ -46,7 +46,7 @@ func (f *kvFileInfo) IsDir() bool {
 	return f.mode&fs.ModeDir != 0
 }
 
-func (f *kvFileInfo) Sys() interface{} {
+func (f *kvFileInfo) Sys() any {
 	return nil
 }
 

@@ -23,7 +23,7 @@ func (err ErrRequestTooLarge) Error() string {
 }
 
 // AuthedRequest sends an authorized JSON request to the Charm and Glow HTTP servers.
-func (cc *Client) AuthedJSONRequest(method string, path string, reqBody interface{}, respBody interface{}) error {
+func (cc *Client) AuthedJSONRequest(method string, path string, reqBody any, respBody any) error {
 	buf := &bytes.Buffer{}
 	err := json.NewEncoder(buf).Encode(reqBody)
 	if err != nil {

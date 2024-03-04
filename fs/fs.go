@@ -38,7 +38,7 @@ type File struct {
 // FileInfo implements the fs.FileInfo interface.
 type FileInfo struct {
 	charm.FileInfo
-	sys interface{}
+	sys any
 }
 
 type sysFuture struct {
@@ -381,7 +381,7 @@ func (fi *FileInfo) ModTime() time.Time {
 }
 
 // Sys returns the underlying system implementation, may be nil.
-func (fi *FileInfo) Sys() interface{} {
+func (fi *FileInfo) Sys() any {
 	return fi.sys
 }
 
