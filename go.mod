@@ -36,12 +36,9 @@ require (
 	modernc.org/sqlite v1.29.3
 )
 
-replace github.com/libsql/sqlite-antlr4-parser => github.com/developing-today-forks/sqlite-antlr4-parser v0.0.0-20240310060246-cdb695e0ba74
-replace github.com/tursodatabase/libsql-client-go => github.com/developing-today-forks/libsql-client-go v0.0.0-20240310053440-e5fba2a8eb64
-
 require (
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
-	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
+	github.com/antlr/antlr4/runtime/Go/antlr/v4 v4.0.0-20230512164433-5d1fd1a340c9 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
