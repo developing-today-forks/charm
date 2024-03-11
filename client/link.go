@@ -84,6 +84,7 @@ func (cc *Client) Link(lh charm.LinkHandler, code string) error {
 		return err
 	}
 	defer s.Close() // nolint:errcheck
+
 	out, err := s.StdoutPipe()
 	if err != nil {
 		return err
@@ -92,12 +93,14 @@ func (cc *Client) Link(lh charm.LinkHandler, code string) error {
 	if err != nil {
 		return err
 	}
+
 	var lr charm.Link
 	dec := json.NewDecoder(out)
 	err = dec.Decode(&lr) // Start Request
 	if err != nil {
 		return err
 	}
+
 	if !checkLinkStatus(lh, &lr) {
 		return nil
 	}

@@ -328,7 +328,7 @@ func (me *SSHServer) handleAPILink(s ssh.Session) {
 func (me *SSHServer) handleAPIUnlink(s ssh.Session) {
 	key, err := keyText(s)
 	if err != nil {
-		log.Info(err)
+		log.Error(err)
 		_ = me.sendAPIMessage(s, "Missing key")
 		return
 	}
