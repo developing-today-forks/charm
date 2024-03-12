@@ -30,6 +30,7 @@ func LinkGen(cfg *client.Config, parentName string, outFilePath string, keysStri
 			}
 		}
 		if len(trimmedSpaceParts)%2 != 0 {
+			log.Error("invalid keys format", "reason", "expected even number of entries", "keys", keysString)
 			return errors.New("invalid keys format: expected even number of entries")
 		}
 		for i := 0; i < len(trimmedSpaceParts); i += 2 {
