@@ -1,3 +1,6 @@
+//go:build sqlite
+// +build sqlite
+
 package migration
 
 // Migration0005_AlterReduceNull allows null for more columns.
@@ -15,7 +18,7 @@ hash_type varchar NOT NULL,
 created_at timestamp default current_timestamp,
 update_at timestamp default current_timestamp,
 delete_at timestamp
-) RANDOM ROWID;
+);
 
 INSERT INTO new_hash_public_key
 SELECT * FROM hash_public_key;
@@ -32,7 +35,7 @@ CREATE TABLE IF NOT EXISTS new_text_public_key(
 	created_at timestamp default current_timestamp,
 	update_at timestamp default current_timestamp,
 	delete_at timestamp
-) RANDOM ROWID;
+);
 
 INSERT INTO new_text_public_key
 SELECT * FROM text_public_key;
@@ -49,7 +52,7 @@ CREATE TABLE IF NOT EXISTS new_private_key(
 	created_at timestamp default current_timestamp,
 	update_at timestamp default current_timestamp,
 	delete_at timestamp
-) RANDOM ROWID;
+);
 
 INSERT INTO new_private_key
 SELECT * FROM private_key;
