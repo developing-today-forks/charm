@@ -34,6 +34,7 @@ require (
 	golang.org/x/crypto v0.21.0
 	golang.org/x/sync v0.6.0
 	modernc.org/sqlite v1.29.3
+	gopkg.in/go-jose/go-jose.v2 v2.6.2
 )
 
 require (
